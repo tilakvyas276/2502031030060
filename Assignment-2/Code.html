@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ScholarTrack - Student Learning Dashboard</title>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://unpkg.com/recharts/umd/Recharts.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #cbd5e1; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+        const { 
+            LayoutDashboard, BookOpen, CheckSquare, FileText, 
+            GraduationCap, Clock, Book, CheckCircle, TrendingUp,
+            Plus, MoreVertical, Calendar, Tag, CheckCircle2, Circle,
+            Search, Trash2
+        } = lucide;
+        const { 
+            BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, 
+            ResponsiveContainer, Cell 
+        } = Recharts;
+
+        // --- Mock Data & Storage ---
+        const STORAGE_KEY = 'scholartrack_standalone_data';
+        const INITIAL_DATA = {
+            subjects: [
+                { id: '1', name: 'Mathematics', color: '#3b82f6', progress: 45, totalHours: 12 },
+                { id: '2', name: 'Computer Science', color: '#10b981', progress: 70, totalHours: 25 },
+                { id: '3', name: 'Physics', color: '#f59e0b', progress: 30, totalHours: 8 },
+            ],
+            tasks: [
+                { id: '1', subjectId: '1', title: 'Complete Calculus Assignment', completed: false, dueDate: new Date().toISOString() },
+                { id: '2', subjectId: '2', title: 'Build React Dashboard', completed: true, dueDate: new Date().toISOString() },
+            ],
+            notes: [
+                { id: '1', title: 'Study Tips', content: '1. Pomodoro technique\n2. Active recall\n3. Spaced repetition', updatedAt: new Date().toISOString() },
+            ],
+            sessions: [
+                { id: '1', subjectId: '1', durationMinutes: 60, date: new Date().toISOString() },
+                { id: '2', subjectId: '2', durationMinutes: 120, date: new Date().toISOString() },
+            ],
+        };
+
+        // --- Components ---
+
+        const Icon = ({ name, size = 20, className = "" }) => {
+            const LucideIcon = lucide[name] || GraduationCap;
+            return <LucideIcon size={size} className={className} />;
+        };
+
+        const Sidebar = ({ currentView, onViewChange }) => {
+            const menuItems = [
+                { id: 'dashboard', label: 'Dashboard', icon: 'LayoutDashboard' },
+                { id: 'subjects', label: 'Subjects', icon: 'BookOpen' },
+                { id: 'tasks', label: 'Tasks', icon: 'CheckSquare' },
+                { id: 'notes', label: 'Notes', icon: 'FileText' },
+            ];
+
+            return (
+                <div className="w-64 bg-white border-r border-slate-200 h-screen flex flex-col hidden md:flex">
+                    <div className="p-6 flex items-center gap-3">
+                        <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white">
+                            <Icon name="GraduationCap" size={24} />
+                        </div>
+                        <h1 className="text-xl font-bold text-slate-900 tracking-tight">ScholarTrack</h1>
+                    </div>
+                    <nav className="flex-1 px-4 py-4 space-y-1">
+                        {menuItems.map((item) => (
+                            <button
+                                key={item.id}
+                                onClick={() => onViewChange(item.id)}
+                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${
+                                    currentView === item.id 
+                                    ? "bg-indigo-50 text-indigo-600 shadow-sm" 
+                                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                                }`}
+                            >
+                                <Icon name={item.icon} className={currentView === item.id ? "text-indigo-600" : "text-slate-400"} />
+                                {item.label}
+                            </button>
+                        ))}
+                    </nav>
+                    <div className="p-4 border-t border-slate-100">
+                        <div className="bg-slate-50 rounded-2xl p-4">
+                            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Daily Goal</p>
+                            <div className="w-full bg-slate-200 rounded-full h-1.5 mb-2">
+                                <div className="bg-indigo-600 h-1.5 rounded-full w-3/4"></div>
+                            </div>
+                            <p className="text-xs text-slate-600">3h 45m / 5h studied today</p>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const Dashboard = ({ subjects, tasks, sessions }) => {
+            const totalHours = subjects.reduce((acc, s) => acc + s.totalHours, 0);
+            const completedTasks = tasks.filter(t => t.completed).length;
+
+            const chartData = subjects.map(s => ({
+                name: s.name,
+                hours: s.totalHours,
+                color: s.color
+            }));
+
+            const stats = [
+                { label: 'Total Study Time', value: `${totalHours}h`, icon: 'Clock', color: 'text-blue-600', bg: 'bg-blue-50' },
+                { label: 'Active Subjects', value: subjects.length, icon: 'Book', color: 'text-indigo-600', bg: 'bg-indigo-50' },
+                { label: 'Tasks Completed', value: completedTasks, icon: 'CheckCircle', color: 'text-emerald-600', bg: 'bg-emerald-50' },
+                { label: 'Current Streak', value: '5 Days', icon: 'TrendingUp', color: 'text-orange-600', bg: 'bg-orange-50' },
+            ];
+
+            return (
+                <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                    <header>
+                        <h2 className="text-3xl font-bold text-slate-900 tracking-tight">Welcome back!</h2>
+                        <p className="text-slate-500 mt-1">Here's what's happening with your learning today.</p>
+                    </header>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                        {stats.map((stat) => (
+                            <div key={stat.label} className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
+                                <div className="flex items-center gap-4">
+                                    <div className={`${stat.bg} p-3 rounded-xl`}>
+                                        <Icon name={stat.icon} className={stat.color} size={24} />
+                                    </div>
+                                    <div>
+                                        <p className="text-sm font-medium text-slate-500">{stat.label}</p>
+                                        <p className="text-2xl font-bold text-slate-900">{stat.value}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
+                            <h3 className="text-lg font-semibold text-slate-900 mb-6">Study Hours by Subject</h3>
+                            <div className="h-[300px] w-full">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <BarChart data={chartData}>
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                        <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} />
+                                        <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} />
+                                        <Tooltip 
+                                            cursor={{ fill: '#f8fafc' }}
+                                            contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+                                        />
+                                        <Bar dataKey="hours" radius={[4, 4, 0, 0]}>
+                                            {chartData.map((entry, index) => (
+                                                <Cell key={`cell-${index}`} fill={entry.color} />
+                                            ))}
+                                        </Bar>
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </div>
+                        </div>
+                        <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
+                            <h3 className="text-lg font-semibold text-slate-900 mb-6">Recent Activity</h3>
+                            <div className="space-y-6">
+                                {sessions.slice(0, 4).map((session) => {
+                                    const subject = subjects.find(s => s.id === session.subjectId);
+                                    return (
+                                        <div key={session.id} className="flex items-center gap-4">
+                                            <div className="w-2 h-10 rounded-full" style={{ backgroundColor: subject?.color }} />
+                                            <div className="flex-1">
+                                                <p className="text-sm font-semibold text-slate-900">{subject?.name}</p>
+                                                <p className="text-xs text-slate-500">Studied for {session.durationMinutes} minutes</p>
+                                            </div>
+                                            <p className="text-xs font-medium text-slate-400">
+                                                {new Date(session.date).toLocaleDateString()}
+                                            </p>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const Subjects = ({ subjects }) => (
+            <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <header className="flex items-center justify-between">
+                    <div>
+                        <h2 className="text-3xl font-bold text-slate-900 tracking-tight">My Subjects</h2>
+                        <p className="text-slate-500 mt-1">Manage and track your progress across different topics.</p>
+                    </div>
+                    <button className="bg-indigo-600 text-white px-4 py-2 rounded-xl flex items-center gap-2 font-medium hover:bg-indigo-700 transition-colors shadow-sm">
+                        <Icon name="Plus" size={20} />
+                        Add Subject
+                    </button>
+                </header>
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                    {subjects.map((subject) => (
+                        <div key={subject.id} className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow group">
+                            <div className="flex justify-between items-start mb-6">
+                                <div className="w-12 h-12 rounded-xl flex items-center justify-center text-white font-bold text-xl" style={{ backgroundColor: subject.color }}>
+                                    {subject.name.charAt(0)}
+                                </div>
+                                <button className="text-slate-400 hover:text-slate-600"><Icon name="MoreVertical" size={20} /></button>
+                            </div>
+                            <h4 className="text-lg font-bold text-slate-900 mb-1">{subject.name}</h4>
+                            <div className="flex items-center gap-2 text-slate-500 text-sm mb-6">
+                                <Icon name="Clock" size={16} />
+                                <span>{subject.totalHours}h total study time</span>
+                            </div>
+                            <div className="space-y-2">
+                                <div className="flex justify-between text-sm">
+                                    <span className="font-medium text-slate-700">Progress</span>
+                                    <span className="text-indigo-600 font-bold">{subject.progress}%</span>
+                                </div>
+                                <div className="w-full bg-slate-100 rounded-full h-2">
+                                    <div className="h-2 rounded-full transition-all duration-1000" style={{ backgroundColor: subject.color, width: `${subject.progress}%` }} />
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        );
+
+        const Tasks = ({ tasks, subjects, onToggleTask }) => {
+            const [filter, setFilter] = useState('all');
+            const filteredTasks = tasks.filter(t => {
+                if (filter === 'pending') return !t.completed;
+                if (filter === 'completed') return t.completed;
+                return true;
+            });
+
+            return (
+                <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                    <header className="flex items-center justify-between">
+                        <div>
+                            <h2 className="text-3xl font-bold text-slate-900 tracking-tight">Tasks</h2>
+                            <p className="text-slate-500 mt-1">Stay on top of your assignments and study goals.</p>
+                        </div>
+                        <button className="bg-indigo-600 text-white px-4 py-2 rounded-xl flex items-center gap-2 font-medium hover:bg-indigo-700 transition-colors shadow-sm">
+                            <Icon name="Plus" size={20} />
+                            New Task
+                        </button>
+                    </header>
+                    <div className="flex gap-2 bg-slate-100 p-1 rounded-xl w-fit">
+                        {['all', 'pending', 'completed'].map((f) => (
+                            <button
+                                key={f}
+                                onClick={() => setFilter(f)}
+                                className={`px-4 py-1.5 rounded-lg text-sm font-medium capitalize transition-all ${
+                                    filter === f ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                                }`}
+                            >
+                                {f}
+                            </button>
+                        ))}
+                    </div>
+                    <div className="space-y-3">
+                        {filteredTasks.map((task) => {
+                            const subject = subjects.find(s => s.id === task.subjectId);
+                            return (
+                                <div key={task.id} className={`bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4 group transition-all ${task.completed ? "opacity-60" : ""}`}>
+                                    <button onClick={() => onToggleTask(task.id)} className={`transition-colors ${task.completed ? "text-emerald-500" : "text-slate-300 hover:text-indigo-500"}`}>
+                                        <Icon name={task.completed ? "CheckCircle2" : "Circle"} size={24} />
+                                    </button>
+                                    <div className="flex-1">
+                                        <h4 className={`font-semibold text-slate-900 ${task.completed ? "line-through text-slate-400" : ""}`}>{task.title}</h4>
+                                        <div className="flex items-center gap-3 mt-1">
+                                            {subject && (
+                                                <div className="flex items-center gap-1.5">
+                                                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: subject.color }} />
+                                                    <span className="text-xs font-medium text-slate-500">{subject.name}</span>
+                                                </div>
+                                            )}
+                                            {task.dueDate && (
+                                                <div className="flex items-center gap-1 text-slate-400">
+                                                    <Icon name="Calendar" size={12} />
+                                                    <span className="text-xs">{new Date(task.dueDate).toLocaleDateString()}</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <button className="text-slate-300 hover:text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity"><Icon name="Tag" size={18} /></button>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            );
+        };
+
+        const Notes = ({ notes, onUpdateNote }) => {
+            const [selectedId, setSelectedId] = useState(notes[0]?.id || null);
+            const selected = notes.find(n => n.id === selectedId);
+
+            return (
+                <div className="h-[calc(100vh-8rem)] flex gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                    <div className="w-80 flex flex-col gap-4">
+                        <header className="flex items-center justify-between">
+                            <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Notes</h2>
+                            <button className="p-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors shadow-sm"><Icon name="Plus" size={20} /></button>
+                        </header>
+                        <div className="relative">
+                            <Icon name="Search" className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                            <input type="text" placeholder="Search notes..." className="w-full pl-10 pr-4 py-2 bg-slate-100 border-none rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 transition-all" />
+                        </div>
+                        <div className="flex-1 overflow-y-auto space-y-2 pr-2 custom-scrollbar">
+                            {notes.map((note) => (
+                                <button key={note.id} onClick={() => setSelectedId(note.id)} className={`w-full text-left p-4 rounded-2xl border transition-all duration-200 ${selectedId === note.id ? "bg-white border-indigo-200 shadow-md ring-1 ring-indigo-100" : "bg-white border-slate-100 hover:border-slate-200 hover:shadow-sm"}`}>
+                                    <h4 className="font-bold text-slate-900 truncate mb-1">{note.title}</h4>
+                                    <p className="text-xs text-slate-500 line-clamp-2 mb-3">{note.content}</p>
+                                    <div className="flex items-center gap-1 text-[10px] font-medium text-slate-400 uppercase tracking-wider">
+                                        <Icon name="Clock" size={10} />
+                                        {new Date(note.updatedAt).toLocaleDateString()}
+                                    </div>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                    <div className="flex-1 bg-white rounded-3xl border border-slate-100 shadow-sm flex flex-col overflow-hidden">
+                        {selected ? (
+                            <>
+                                <header className="p-6 border-b border-slate-50 flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg"><Icon name="FileText" size={20} /></div>
+                                        <div>
+                                            <h3 className="text-lg font-bold text-slate-900">{selected.title}</h3>
+                                            <p className="text-xs text-slate-400">Last edited {new Date(selected.updatedAt).toLocaleString()}</p>
+                                        </div>
+                                    </div>
+                                    <button className="p-2 text-slate-400 hover:text-red-500 transition-colors"><Icon name="Trash2" size={20} /></button>
+                                </header>
+                                <div className="flex-1 p-8 overflow-y-auto">
+                                    <textarea
+                                        className="w-full h-full border-none focus:ring-0 p-0 text-slate-700 resize-none font-sans leading-relaxed text-lg outline-none"
+                                        value={selected.content}
+                                        onChange={(e) => onUpdateNote(selected.id, e.target.value)}
+                                        placeholder="Start writing..."
+                                    />
+                                </div>
+                            </>
+                        ) : (
+                            <div className="flex-1 flex flex-col items-center justify-center text-slate-400 p-8 text-center">
+                                <Icon name="FileText" size={48} className="mb-4 text-slate-200" />
+                                <p className="text-lg font-medium">Select a note to view or edit</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        // --- Main App ---
+
+        const App = () => {
+            const [currentView, setCurrentView] = useState('dashboard');
+            const [data, setData] = useState(() => {
+                const saved = localStorage.getItem(STORAGE_KEY);
+                return saved ? JSON.parse(saved) : INITIAL_DATA;
+            });
+
+            useEffect(() => {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+            }, [data]);
+
+            const toggleTask = (id) => {
+                setData(prev => ({
+                    ...prev,
+                    tasks: prev.tasks.map(t => t.id === id ? { ...t, completed: !t.completed } : t)
+                }));
+            };
+
+            const updateNote = (id, content) => {
+                setData(prev => ({
+                    ...prev,
+                    notes: prev.notes.map(n => n.id === id ? { ...n, content, updatedAt: new Date().toISOString() } : n)
+                }));
+            };
+
+            const renderView = () => {
+                switch (currentView) {
+                    case 'dashboard': return <Dashboard subjects={data.subjects} tasks={data.tasks} sessions={data.sessions} />;
+                    case 'subjects': return <Subjects subjects={data.subjects} />;
+                    case 'tasks': return <Tasks tasks={data.tasks} subjects={data.subjects} onToggleTask={toggleTask} />;
+                    case 'notes': return <Notes notes={data.notes} onUpdateNote={updateNote} />;
+                    default: return <Dashboard subjects={data.subjects} tasks={data.tasks} sessions={data.sessions} />;
+                }
+            };
+
+            return (
+                <div className="flex h-screen bg-slate-50 font-sans text-slate-900 overflow-hidden">
+                    <Sidebar currentView={currentView} onViewChange={setCurrentView} />
+                    <main className="flex-1 overflow-y-auto p-8 lg:p-12">
+                        <div className="max-w-7xl mx-auto">
+                            {renderView()}
+                        </div>
+                    </main>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
